@@ -3,6 +3,7 @@ require 'csv'
 require 'json'
 require 'time'
 require 'byebug'
+require 'fileutils'
 
 
 # Config
@@ -18,7 +19,15 @@ begin
 
   puts "Fetched #{transactions.size} transactions"
 
-  CSV.open('ton_tax_report.csv', 'w') do |csv|
+  # Create CSV_Files directory if it doesn't exist
+  FileUtils.mkdir_p('CSV_Files')
+
+  # Generate filename with timestamp and partial wallet address
+  short_address = "#{wallet_address[0..2]}...#{wallet_address[-4..-1]}"
+  timestamp = Time.now.strftime("%Y%m%d_%H%M%S")
+  filename = "CSV_Files/ton_transactions_#{short_address}_#{timestamp}.csv"
+
+  CSV.open(filename, 'w') do |csv|
     csv << ['Date (UTC)', 'Tx Hash', 'Type', 'Amount (TON)', 'Fee (TON)', 'Counterparty Address']
 
     transactions.each do |tx|
@@ -44,7 +53,7 @@ begin
     end
   end
 
-  puts "Saved to ton_tax_report.csv"
+  puts "Saved to #{filename}"
 
 rescue => e
   puts "Error: #{e.message}"

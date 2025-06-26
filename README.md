@@ -19,7 +19,7 @@ This script helps in crypto tax filing by targeting a Wallet and exploring all t
     ```
 2. Crete a Gemset:
     ```sh
-    rvm 3.4.4@tonapi_wallet_explorer --create
+    rvm 3.4.4@tonapi --create
     ```
 
 3. Install dependencies:
