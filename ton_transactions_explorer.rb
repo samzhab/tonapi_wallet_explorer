@@ -6,7 +6,7 @@ require 'byebug'
 require 'fileutils'
 
 # Config
-wallet_address = 'UQBuXMAHhZU84j_C8RhRGcxOmhzXfKxJX7zJEle46q_jhny6'
+wallet_address = 'EQBl3gg6AAdjgjO2ZoNU5Q5EzUIl8XMNZrix8Z5dJmkHUfxI'
 anton_url = "https://anton.tools/api/v0/transactions?address=#{wallet_address}&workchain=0&order=DESC&limit=10000"
 
 def extract_counterparty(tx, type)
