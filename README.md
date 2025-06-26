@@ -1,6 +1,6 @@
 # TONAPI Wallet Explorer
 
-This script helps in crypto tax filing by targeting a Wallet and exploring all transactions using TonAPI. It helps save all TON transactions locally as CSV.
+This script helps in crypto tax filing by targeting a Wallet and exploring all transactions using [Anton](https://github.com/tonindexer/anton). It helps save all TON transactions locally as CSV.
 
 ## Setup Instructions
 
