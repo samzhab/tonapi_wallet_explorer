@@ -7,7 +7,8 @@ require 'fileutils'
 
 # Config
 wallet_address = 'EQBl3gg6AAdjgjO2ZoNU5Q5EzUIl8XMNZrix8Z5dJmkHUfxI'
-anton_url = "https://anton.tools/api/v0/transactions?address=#{wallet_address}&workchain=0&order=DESC&limit=10000"
+# anton_url = "https://anton.tools/api/v0/transactions?address=#{wallet_address}&workchain=0&order=DESC&limit=10000"
+anton_url = 'https://public-api.solscan.io/account/transactions?address=5TJDXqWT8EqhT6YtHj6ykDpPUh2iqJfBU2d7wFmQDuA3&limit=100'
 
 def extract_counterparty(tx, type)
   if type == 'IN'
@@ -41,6 +42,7 @@ begin
   raise "API request failed: #{response.code} - #{response.body}" unless response.success?
 
   data = JSON.parse(response.body)
+  byebug
   transactions = data['results'] || []
 
   if transactions.any?

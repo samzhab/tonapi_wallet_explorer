@@ -1,13 +1,22 @@
-# TONAPI Wallet Explorer
+# TON Crypto Tax Reporting Suite
 
-This script helps in crypto tax filing by targeting a Wallet and exploring all transactions using [Anton](https://github.com/tonindexer/anton). It helps save all TON transactions locally as CSV.
+This suite of scripts helps with comprehensive crypto tax reporting for TON (The Open Network) wallets, including transaction processing, FMV calculations, and CRA-compliant report generation.
+
+## Key Features
+
+- **Transaction Processing**: Fetches and processes all wallet transactions
+- **FMV Integration**: Uses historical exchange rates from CoinGecko API
+- **CRA Compliance**: Generates tax reports meeting Canadian Revenue Agency requirements
+- **Automated Workflow**: Complete processing from raw transactions to final reports
+- **Error Handling**: Robust logging and validation throughout the process
 
 ## Setup Instructions
 
 ### Prerequisites
 
-- Ruby 3.4.4 installed
-- RVM (Ruby Version Manager) installed
+- Ruby 3.4.4
+- Bundler gem installed
+- CoinGecko API key (for FMV data)
 
 ### Steps
 
@@ -35,7 +44,32 @@ This script helps in crypto tax filing by targeting a Wallet and exploring all t
 5. Run the script - The script will generate a CSV file for specified wallet.
 
     ```sh
-    ruby ton_wallet_explorer.rb
+    ruby ton_transactions_explorer.rb
+    ```
+
+    then get FMV for each transaction using CoinGecko API
+    ```sh
+    ruby historical_fmv_requester.rb
+    ```
+
+    then check for missing FMV for each transaction
+    ```sh
+    ruby missing_historial_fmv_checker.rb
+    ```
+
+    then do another FMV fetch for missing FMV
+    ```sh
+    ruby find_missing_historical_fmv.rb
+    ```
+
+    then update missing historical FMV
+    ```sh
+    ruby update_missing_historical_fmv.rb
+    ```
+
+    finally, run crypto tax generator
+    ```sh
+    ruby cra_cryptotax_generator.rb
     ```
 
  ## License
