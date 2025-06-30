@@ -11,7 +11,7 @@ COINGECKO_API_URL = 'https://api.coingecko.com/api/v3'
 CACHE_DIR = 'cache'
 LOG_DIR = 'logs'
 CSV_DIR = 'CSV_Files'
-MIN_API_INTERVAL = 11.0 # seconds (ensures max 10 calls/minute)
+MIN_API_INTERVAL = 13.0 # seconds (ensures max 10 calls/minute)
 MAX_RETRIES = 3
 MAX_HISTORY_DAYS = 365
 MAX_THREADS = 4
@@ -131,19 +131,22 @@ def fetch_historical_price(coin_id, date, currency)
   rate_limit_errors = 0
   auth_errors = 0
   retries = 0
+  $last_api_code = nil # Reset before each request
 
-  while retries <= MAX_RETRIES
-    $rate_limiter.wait
+    while retries <= MAX_RETRIES
+      $rate_limiter.wait
 
-    begin
-      log("Attempt #{retries + 1}/#{MAX_RETRIES + 1}: Fetching #{coin_id} for #{date}")
+      begin
+        log("Fetching #{coin_id} for #{date}")
 
-      response = HTTParty.get(
-        "#{COINGECKO_API_URL}/coins/#{coin_id}/history",
-        query: { date: date.strftime('%d-%m-%Y'), localization: false },
-        headers: { 'x_cg_demo_api_key' => COINGECKO_API_KEY },
-        timeout: 15
-      )
+        response = HTTParty.get(
+          "#{COINGECKO_API_URL}/coins/#{coin_id}/history",
+          query: { date: date.strftime('%d-%m-%Y'), localization: false },
+          headers: { 'x_cg_demo_api_key' => COINGECKO_API_KEY },
+          timeout: 15
+        )
+
+      $last_api_code = response.code # Store the response code
 
       case response.code
       when 200
@@ -160,14 +163,17 @@ def fetch_historical_price(coin_id, date, currency)
         log("Bad Request (400) - Invalid parameters for #{coin_id} on #{date}", :error)
         return nil
 
+      when 404
+        log("Coin #{coin_id} not found (404) - skipping ", :warn)
+        return nil
+
       when 401, 403, 10002
         auth_errors += 1
         if auth_errors >= 2
           log("Critical: Authentication failed #{auth_errors}x (Code #{response.code}) - Check API key", :error)
-          exit(1)
         end
         sleep(auth_errors)
-        next
+        return nil
 
       when 429
         rate_limit_errors += 1
@@ -244,71 +250,87 @@ begin
       log("Processing file: #{file_basename}")
 
       chain = detect_blockchain(file_basename)
-      next unless chain
+    unless chain
+      log("Skipping - unknown chain", :warn)
+      return {skipped: true, reason: "unknown chain"}
+    end
 
-      cache_file = "#{CACHE_DIR}/#{chain[:file_prefix]}.yaml"
-      missing_file = "#{CACHE_DIR}/#{chain[:file_prefix]}_missing.yaml"
+    # Load caches
+    cache_file = "#{CACHE_DIR}/#{chain[:file_prefix]}.yaml"
+    missing_file = "#{CACHE_DIR}/#{chain[:file_prefix]}_missing.yaml"
 
-      cache = File.exist?(cache_file) ? YAML.safe_load(File.read(cache_file), permitted_classes: [Date]) || {} : {}
-      missing = File.exist?(missing_file) ? YAML.safe_load(File.read(missing_file), permitted_classes: [Date]) || {} : {}
+    cache = File.exist?(cache_file) ? YAML.safe_load(File.read(cache_file), permitted_classes: [Date]) || {} : {}
+    missing = File.exist?(missing_file) ? YAML.safe_load(File.read(missing_file), permitted_classes: [Date]) || {} : {}
 
-      transactions = []
-      CSV.foreach(file, headers: true) do |row|
-        date_str = row['Date (UTC)'] || row['DateTime (UTC)'] || row['Block Time'] || row['Human Time']
-        date = safe_parse_date(date_str, row)
-        transactions << {row: row, date: date} if date
+    # Process transactions
+    transactions = []
+    CSV.foreach(file, headers: true) do |row|
+      date_str = row['Date (UTC)'] || row['DateTime (UTC)'] || row['Block Time'] || row['Human Time']
+      date = safe_parse_date(date_str, row)
+      transactions << {row: row, date: date} if date
+    end
+
+    log("Found #{transactions.size} valid transactions")
+
+    # Group by date to avoid duplicate API calls
+    dates = transactions.map { |tx| tx[:date] }.uniq
+
+    new_rates = {}
+    new_missing = {}
+
+    dates.each do |date|
+      next if date < (Date.today - MAX_HISTORY_DAYS)
+
+      if cache.key?(date)
+        log("Using cached rate for #{date}")
+        next
       end
 
-      log("Found #{transactions.size} valid transactions in #{file_basename}")
-
-      # Group transactions by date to avoid duplicate API calls
-      dates = transactions.map { |tx| tx[:date] }.uniq
-
-      new_rates = {}
-      new_missing = {}
-
-      dates.each do |date|
-        next if date < (Date.today - MAX_HISTORY_DAYS)
-
-        if cache.key?(date)
-          log("Using cached rate for #{chain[:name]} on #{date}")
-          next
-        end
-
-        if missing.key?(date)
-          log("Skipping previously missing date #{date} for #{chain[:name]}")
-          next
-        end
-
-        price = fetch_historical_price(chain[:id], date, chain[:currency])
-        if price
-          new_rates[date] = price
-          chain_results[chain[:name]][:rates] += 1
-        else
-          new_missing[date] = 'missing'
-          chain_results[chain[:name]][:missing] += 1
-        end
+      if missing.key?(date)
+        log("Skipping previously missing date #{date}")
+        next
       end
 
-      unless new_rates.empty?
-        File.write(cache_file, cache.merge(new_rates).to_yaml)
-        log("Added #{new_rates.size} new rates for #{chain[:name]} to #{cache_file}")
+      price = fetch_historical_price(chain[:id], date, chain[:currency])
+      if price.nil? && ($last_api_code == 404 || [401, 403, 10002].include?($last_api_code))
+        error_type = case $last_api_code
+                     when 404 then "404 (Coin not found)"
+                     when 401 then "401 (Unauthorized)"
+                     when 403 then "403 (Forbidden)"
+                     when 10002 then "10002 (Invalid API Key)"
+                     else "Unknown error"
+                     end
+        log("Skipping entire file due to #{error_type} for #{chain[:id]}", :warn)
+        return {
+          skipped: true,
+          reason: "#{error_type} for coin #{chain[:id]}",
+          error_code: $last_api_code
+        }
+      elsif price
+        new_rates[date] = price
+      else
+        new_missing[date] = 'missing'
       end
+    end
 
-      unless new_missing.empty?
-        File.write(missing_file, missing.merge(new_missing).to_yaml)
-        log("Added #{new_missing.size} missing dates for #{chain[:name]} to #{missing_file}")
-      end
+    # Only update caches if we processed all dates without 404
+    unless new_rates.empty?
+      File.write(cache_file, cache.merge(new_rates).to_yaml)
+    end
 
-      File.write("#{CACHE_DIR}/processed_#{Digest::SHA256.file(file).hexdigest}", '')
-      log("Completed processing #{file_basename}")
+    unless new_missing.empty?
+      File.write(missing_file, missing.merge(new_missing).to_yaml)
+    end
 
+      {skipped: false, processed: true}
     rescue => e
-      log("Error processing file #{file_basename}: #{e.message}", :error)
+      log("Error processing file: #{e.message}", :error)
+      {skipped: true, reason: "error: #{e.message}"}
     end
   end
 
-  log("\nProcessing complete. Results by chain:")
+  log("="*50)
+  log("\nProcessing complete.")
   chain_results.each do |chain, counts|
     log("#{chain.upcase}: #{counts[:rates]} rates found | #{counts[:missing]} missing dates")
   end
