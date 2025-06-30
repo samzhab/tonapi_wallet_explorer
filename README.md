@@ -5,7 +5,7 @@ This suite of scripts started out as a comprehensive crypto tax reporting for TO
 ## Key Features
 
 - **Transaction Processing**: Fetches and processes all wallet transactions for TON
-- **FMV Integration**: Uses historical exchange rates from CoinGecko API
+- **FMV Integration**: Uses historical exchange rates from CoinGecko free API capped at 30 calls/ minute and 10K/month (at time of publish)
 - **CRA Compliance**: Generates tax reports meeting Canadian Revenue Agency requirements
 - **Automated Workflow**: Complete processing from raw transactions to final reports
 - **Error Handling**: Robust logging and validation throughout the process
@@ -74,30 +74,52 @@ This suite of scripts started out as a comprehensive crypto tax reporting for TO
 
 ## Key features implemented:
 
-1. **Multi-chain support**:
-   - Automatic detection of **12 major blockchains** (TON, ETH, SOL, BASE, BSC, LINEA, OPBNB, TRX, ARB, OP, SCROLL, SONIC, ZKSYNC)
-   - Chain-specific pattern matching for addresses and filenames
-   - Separate cache files for each blockchain
+### 1. **Multi-chain support**:
+- Automatic detection of **12 major blockchains** (TON, ETH, SOL, BASE, BSC, LINEA, OPBNB, TRX, ARB, OP, SCROLL, SONIC, ZKSYNC)
+- Chain-specific pattern matching for addresses and filenames
+- Separate cache files for each blockchain
 
-2. **Smart caching system**:
-   - Maintains two cache files per chain:
-     * **{chain}_historical_fmv.yaml** - Successfully fetched rates
-     * **{chain}_missing_historical_fmv.yaml** - Dates with failed fetches
-   - **SHA256-based file processing** tracking to avoid reprocessing
-   - Thread-safe parallel processing of multiple files
+### 2. **Smart caching system**:
+- Maintains two cache files per chain:
+    * **{chain}_historical_fmv.yaml** - Successfully fetched rates
+    * **{chain}_missing_historical_fmv.yaml** - Dates with failed fetches
+- **SHA256-based file processing** tracking to avoid reprocessing
+- Thread-safe parallel processing of multiple files
 
-3. **CoinGecko API integration**:
-   - Strict enforcement of 365-day historical data limit
-   - Automatic rate limiting (1.5s between calls)
-   - Retry mechanism (3 attempts per failed request)
-   - Comprehensive error handling for failed fetches
+3. **Enhanced CoinGecko API Integration**:
+Here's a more concise README update focusing on key functionality rather than implementation details:
 
-4. **Enhanced reporting**:
+### 3. **CoinGecko API Integration**
+
+#### **Core Features**
+- Automatic historical price fetching (max 365 days)
+- Smart date grouping to minimize duplicate API calls
+- Case-insensitive currency support (CAD/USD/etc)
+
+#### **Rate & Error Handling**
+- Built-in rate limiting compliant with API requirements
+- Intelligent retry system for failed requests
+- Comprehensive handling of all API error responses
+- Never skips price pairs - persistent retry attempts
+
+#### **Reliability**
+- Resilient to network interruptions
+- Automatic recovery from temporary failures
+- Detailed logging of all fetch attempts
+- Caching system to prevent redundant calls
+
+#### **Key Improvements**
+- Fixed "undefined retries" bug in error handling
+- Enhanced 429 rate limit recovery
+- Added support for all CoinGecko API status codes
+- Improved timeout and network failure handling
+
+### 4. **Enhanced reporting**:
    - Detailed console output during processing
    - Final summary of cached rates vs missing dates
    - Clear progress tracking for large batches
 
-5. **Optimization features**:
+### 5. **Optimization features**:
    - Parallel processing (3 threads)
    - Date batching to minimize API calls
    - Skip logic for already processed dates/files

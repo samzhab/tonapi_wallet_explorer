@@ -6,15 +6,15 @@ require 'parallel'
 require 'date'
 
 # Configuration
-COINGECKO_API_KEY = 'XXXX' # your coingecko api key here
+COINGECKO_API_KEY = 'XXX' #your free coingecko api key here
 COINGECKO_API_URL = 'https://api.coingecko.com/api/v3'
 CACHE_DIR = 'cache'
 LOG_DIR = 'logs'
 CSV_DIR = 'CSV_Files'
-MIN_API_INTERVAL = 12.0 # seconds (ensures max 10 calls/minute)
+MIN_API_INTERVAL = 11.0 # seconds (ensures max 10 calls/minute)
 MAX_RETRIES = 3
 MAX_HISTORY_DAYS = 365
-MAX_THREADS = 2
+MAX_THREADS = 4
 BASE_RETRY_DELAY = 10 # Additional seconds to wait after failed attempts
 
 CHAIN_MAPPING = [
@@ -128,21 +128,9 @@ end
 
 def fetch_historical_price(coin_id, date, currency)
   cache_key = "#{coin_id}_#{date}"
-
-  # Check if we're already processing this date
-  if $date_cache[cache_key] == :processing
-    log("Already processing #{coin_id} for #{date}, waiting...")
-    while $date_cache[cache_key] == :processing
-      sleep 1
-    end
-    return $date_cache[cache_key]
-  end
-
+  rate_limit_errors = 0
+  auth_errors = 0
   retries = 0
-  price = nil
-
-  # Mark this date as being processed
-  $date_cache[cache_key] = :processing
 
   while retries <= MAX_RETRIES
     $rate_limiter.wait
@@ -154,37 +142,78 @@ def fetch_historical_price(coin_id, date, currency)
         "#{COINGECKO_API_URL}/coins/#{coin_id}/history",
         query: { date: date.strftime('%d-%m-%Y'), localization: false },
         headers: { 'x_cg_demo_api_key' => COINGECKO_API_KEY },
-        timeout: 10
+        timeout: 15
       )
 
-      if response.success?
+      case response.code
+      when 200
         price = response.dig('market_data', 'current_price', currency)
         if price
-          log("Successfully fetched #{currency.upcase} rate for #{coin_id} on #{date}: #{price}")
-          $date_cache[cache_key] = price.to_f
+          log("Fetched #{currency.upcase} rate for #{coin_id} on #{date}: #{price}")
           return price.to_f
         else
-          log("No price data found for #{coin_id} on #{date}", :warn)
-          $date_cache[cache_key] = nil
+          log("No price data for #{coin_id} on #{date} (200 OK but no price)", :warn)
           return nil
         end
+
+      when 400
+        log("Bad Request (400) - Invalid parameters for #{coin_id} on #{date}", :error)
+        return nil
+
+      when 401, 403, 10002
+        auth_errors += 1
+        if auth_errors >= 2
+          log("Critical: Authentication failed #{auth_errors}x (Code #{response.code}) - Check API key", :error)
+          exit(1)
+        end
+        sleep(auth_errors)
+        next
+
+      when 429
+        rate_limit_errors += 1
+        backoff = [[10 * (2 ** rate_limit_errors), 300].min, 10].max # 10s to 5min
+        log("Rate limited (429) - Waiting #{backoff}s (Attempt #{rate_limit_errors})", :warn)
+        sleep(backoff)
+        next
+
+      when 500, 503
+        log("Server Error #{response.code} - Retrying in 30s", :warn)
+        sleep(30)
+        next
+
+      when 1020
+        log("CDN Access Denied (1020) - Possible IP blocking - - Retrying in 60s", :error)
+        sleep(60)
+        next
+
+      when 10005
+        log("API Plan Limit Reached (10005) - Upgrade required", :error)
+        return nil
+
       else
-        log("API request failed with code #{response.code}", :warn)
+        log("Unexpected response #{response.code} - Retrying", :warn)
       end
+
+    rescue HTTParty::Error => e
+      log("HTTP Error: #{e.message}", :warn)
+    rescue Timeout::Error
+      log("Timeout fetching #{coin_id} for #{date}", :warn)
+    rescue SocketError
+      log("Network connection failed", :error)
+      sleep(30)
     rescue => e
-      log("API error: #{e.message}", :warn)
+      log("Unexpected error: #{e.class} - #{e.message}", :error)
     end
 
     retries += 1
     if retries <= MAX_RETRIES
-      additional_wait = BASE_RETRY_DELAY * retries
-      log("Waiting #{additional_wait}s before retry #{retries + 1}/#{MAX_RETRIES + 1} for #{coin_id} on #{date}")
-      sleep(additional_wait)
+      wait_time = [10 * retries, 60].min
+      log("Retrying in #{wait_time}s (#{retries}/#{MAX_RETRIES})")
+      sleep(wait_time)
     end
   end
 
-  log("Max retries (#{MAX_RETRIES}) exceeded for #{coin_id} on #{date}", :error)
-  $date_cache[cache_key] = nil
+  log("Failed to fetch #{coin_id} for #{date} after #{MAX_RETRIES} attempts", :error)
   nil
 end
 
