@@ -75,7 +75,7 @@ This suite of scripts started out as a comprehensive crypto tax reporting for TO
 ## Key features implemented:
 
 1. **Multi-chain support**:
-   - Automatic detection of **13 major blockchains** (TON, ETH, SOL, BASE, BSC, LINEA, OPBNB, TRX, ARB, OP, SCROLL, SONIC, ZKSYNC)
+   - Automatic detection of **12 major blockchains** (TON, ETH, SOL, BASE, BSC, LINEA, OPBNB, TRX, ARB, OP, SCROLL, SONIC, ZKSYNC)
    - Chain-specific pattern matching for addresses and filenames
    - Separate cache files for each blockchain
 
